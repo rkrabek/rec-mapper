@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rec Mapper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <h1 class="logo">Rec Mapper</h1>
+      <p class="tagline">Extract addresses and map them</p>
+    </header>
+
+    <!-- View: Selection Mode -->
+    <div id="view-selection" class="view active">
+      <div class="card">
+        <div class="card-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/>
+          </svg>
+        </div>
+        <h2>Click-Based Selection</h2>
+        <p>Click on 2-3 similar elements containing addresses, then let Rec Mapper find all matching items automatically.</p>
+        <button id="btn-start-selection" class="btn btn-primary">
+          Start Selection
+        </button>
+      </div>
+
+      <div class="tips">
+        <h3>Tips for best results:</h3>
+        <ul>
+          <li>Click on the container element (e.g., entire listing card)</li>
+          <li>Select items that look similar in structure</li>
+          <li>Press ESC to cancel selection mode</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- View: Selecting (in progress) -->
+    <div id="view-selecting" class="view">
+      <div class="card selecting-card">
+        <div class="spinner"></div>
+        <h2>Selection Mode Active</h2>
+        <p>Click on similar elements in the page. The extension is waiting for your selections.</p>
+        <div class="selection-status">
+          <span id="selection-count">0</span> elements selected
+        </div>
+        <button id="btn-cancel-selection" class="btn btn-secondary">
+          Cancel Selection
+        </button>
+      </div>
+    </div>
+
+    <!-- View: Review Addresses -->
+    <div id="view-review" class="view">
+      <div class="review-header">
+        <h2>Review Addresses</h2>
+        <p id="review-count">0 addresses extracted</p>
+      </div>
+
+      <div class="address-list" id="address-list">
+        <!-- Addresses will be inserted here -->
+      </div>
+
+      <div class="review-actions">
+        <button id="btn-add-manual" class="btn btn-secondary btn-small">
+          + Add Manually
+        </button>
+        <button id="btn-back-selection" class="btn btn-secondary btn-small">
+          Re-select
+        </button>
+      </div>
+
+      <!-- Manual Entry Form (hidden by default) -->
+      <div id="manual-entry" class="manual-entry hidden">
+        <input type="text" id="manual-address" placeholder="Enter address..." class="input">
+        <div class="manual-entry-buttons">
+          <button id="btn-manual-add" class="btn btn-primary btn-small">Add</button>
+          <button id="btn-manual-cancel" class="btn btn-secondary btn-small">Cancel</button>
+        </div>
+      </div>
+
+      <button id="btn-map-these" class="btn btn-primary btn-large">
+        Map These Addresses
+      </button>
+    </div>
+
+    <!-- View: Map -->
+    <div id="view-map" class="view">
+      <div class="map-header">
+        <button id="btn-back-review" class="btn-back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5m7-7l-7 7 7 7"/>
+          </svg>
+          Back to Review
+        </button>
+        <span id="map-count">0 locations mapped</span>
+      </div>
+
+      <div id="map-container" class="map-container">
+        <div id="map" class="map"></div>
+      </div>
+
+      <div id="geocoding-status" class="geocoding-status hidden">
+        <div class="spinner small"></div>
+        <span>Geocoding addresses...</span>
+        <span id="geocoding-progress">0/0</span>
+      </div>
+
+      <div id="map-errors" class="map-errors hidden">
+        <h4>Could not geocode:</h4>
+        <ul id="error-list"></ul>
+      </div>
+    </div>
+
+    <!-- API Key Modal -->
+    <div id="api-key-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2>Google Maps API Key</h2>
+        <p>Enter your Google Maps API key to enable geocoding and map display.</p>
+        <input type="text" id="api-key-input" placeholder="AIza..." class="input">
+        <div class="api-key-help">
+          <a href="https://developers.google.com/maps/documentation/javascript/get-api-key" target="_blank">
+            How to get an API key
+          </a>
+        </div>
+        <div class="modal-buttons">
+          <button id="btn-save-api-key" class="btn btn-primary">Save Key</button>
+          <button id="btn-cancel-api-key" class="btn btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="settings-toggle">
+      <button id="btn-settings" class="btn-icon" title="Settings">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel" class="settings-panel hidden">
+      <h3>Settings</h3>
+      <div class="setting-item">
+        <label>Google Maps API Key</label>
+        <div class="setting-value">
+          <span id="api-key-status">Not set</span>
+          <button id="btn-change-api-key" class="btn btn-secondary btn-small">Change</button>
+        </div>
+      </div>
+      <div class="setting-item">
+        <label>Clear Cached Geocodes</label>
+        <button id="btn-clear-cache" class="btn btn-secondary btn-small">Clear Cache</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
