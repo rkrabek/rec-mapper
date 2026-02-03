@@ -323,6 +323,8 @@
         index,
         element: getElementIdentifier(element),
         address: address,
+        type: result?.type || 'text',
+        url: result?.url || null,
         rawText: AddressParser.extractText(element)
       };
     }).filter(r => r.address && r.address.length > 0);

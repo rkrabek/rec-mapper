@@ -10,51 +10,69 @@
     currentView: 'selection',
     addresses: [],
     selectedAddresses: new Set(),
+    searchArea: '',
     apiKey: null,
     geocodedResults: [],
     map: null,
     markers: []
   };
 
-  // DOM Elements
-  const elements = {
-    views: {
-      selection: document.getElementById('view-selection'),
-      selecting: document.getElementById('view-selecting'),
-      review: document.getElementById('view-review'),
-      map: document.getElementById('view-map')
-    },
-    buttons: {
-      startSelection: document.getElementById('btn-start-selection'),
-      cancelSelection: document.getElementById('btn-cancel-selection'),
-      addManual: document.getElementById('btn-add-manual'),
-      backSelection: document.getElementById('btn-back-selection'),
-      mapThese: document.getElementById('btn-map-these'),
-      backReview: document.getElementById('btn-back-review'),
-      settings: document.getElementById('btn-settings'),
-      saveApiKey: document.getElementById('btn-save-api-key'),
-      cancelApiKey: document.getElementById('btn-cancel-api-key'),
-      changeApiKey: document.getElementById('btn-change-api-key'),
-      clearCache: document.getElementById('btn-clear-cache'),
-      manualAdd: document.getElementById('btn-manual-add'),
-      manualCancel: document.getElementById('btn-manual-cancel')
-    },
-    selectionCount: document.getElementById('selection-count'),
-    reviewCount: document.getElementById('review-count'),
-    addressList: document.getElementById('address-list'),
-    mapCount: document.getElementById('map-count'),
-    mapContainer: document.getElementById('map'),
-    geocodingStatus: document.getElementById('geocoding-status'),
-    geocodingProgress: document.getElementById('geocoding-progress'),
-    mapErrors: document.getElementById('map-errors'),
-    errorList: document.getElementById('error-list'),
-    apiKeyModal: document.getElementById('api-key-modal'),
-    apiKeyInput: document.getElementById('api-key-input'),
-    apiKeyStatus: document.getElementById('api-key-status'),
-    settingsPanel: document.getElementById('settings-panel'),
-    manualEntry: document.getElementById('manual-entry'),
-    manualAddress: document.getElementById('manual-address')
-  };
+  // DOM Elements - populated after DOM ready
+  let elements = {};
+
+  // Initialize DOM references
+  function initElements() {
+    elements = {
+      views: {
+        selection: document.getElementById('view-selection'),
+        selecting: document.getElementById('view-selecting'),
+        review: document.getElementById('view-review'),
+        map: document.getElementById('view-map')
+      },
+      buttons: {
+        startSelection: document.getElementById('btn-start-selection'),
+        cancelSelection: document.getElementById('btn-cancel-selection'),
+        addManual: document.getElementById('btn-add-manual'),
+        backSelection: document.getElementById('btn-back-selection'),
+        deleteSelected: document.getElementById('btn-delete-selected'),
+        mapThese: document.getElementById('btn-map-these'),
+        saveData: document.getElementById('btn-save-data'),
+        exportData: document.getElementById('btn-export-data'),
+        backReview: document.getElementById('btn-back-review'),
+        settings: document.getElementById('btn-settings'),
+        saveApiKey: document.getElementById('btn-save-api-key'),
+        cancelApiKey: document.getElementById('btn-cancel-api-key'),
+        changeApiKey: document.getElementById('btn-change-api-key'),
+        clearCache: document.getElementById('btn-clear-cache'),
+        clearSaved: document.getElementById('btn-clear-saved'),
+        manualAdd: document.getElementById('btn-manual-add'),
+        manualCancel: document.getElementById('btn-manual-cancel'),
+        loadSaved: document.getElementById('btn-load-saved'),
+        confirmSave: document.getElementById('btn-confirm-save'),
+        cancelSave: document.getElementById('btn-cancel-save')
+      },
+      selectionCount: document.getElementById('selection-count'),
+      reviewCount: document.getElementById('review-count'),
+      addressList: document.getElementById('address-list'),
+      searchArea: document.getElementById('search-area'),
+      mapCount: document.getElementById('map-count'),
+      mapContainer: document.getElementById('map'),
+      geocodingStatus: document.getElementById('geocoding-status'),
+      geocodingProgress: document.getElementById('geocoding-progress'),
+      mapErrors: document.getElementById('map-errors'),
+      errorList: document.getElementById('error-list'),
+      apiKeyModal: document.getElementById('api-key-modal'),
+      apiKeyInput: document.getElementById('api-key-input'),
+      apiKeyStatus: document.getElementById('api-key-status'),
+      settingsPanel: document.getElementById('settings-panel'),
+      manualEntry: document.getElementById('manual-entry'),
+      manualAddress: document.getElementById('manual-address'),
+      savedDataSection: document.getElementById('saved-data-section'),
+      savedDataSelect: document.getElementById('saved-data-select'),
+      saveModal: document.getElementById('save-modal'),
+      saveNameInput: document.getElementById('save-name-input')
+    };
+  }
 
   // View management
   function showView(viewName) {
@@ -65,14 +83,22 @@
 
   // Initialize
   async function init() {
+    initElements();
+
     // Load API key from storage
-    const stored = await chrome.storage.local.get('googleMapsApiKey');
+    const stored = await chrome.storage.local.get(['googleMapsApiKey', 'savedExtractions']);
     if (stored.googleMapsApiKey) {
       state.apiKey = stored.googleMapsApiKey;
       elements.apiKeyStatus.textContent = '••••' + state.apiKey.slice(-4);
     }
 
-    // Check if we have addresses from a previous session
+    // Show saved extractions if any
+    if (stored.savedExtractions && Object.keys(stored.savedExtractions).length > 0) {
+      populateSavedSelect(stored.savedExtractions);
+      elements.savedDataSection.classList.remove('hidden');
+    }
+
+    // Check if we have addresses from current tab session
     const tabState = await new Promise(resolve => {
       chrome.runtime.sendMessage({ action: 'getTabState' }, resolve);
     });
@@ -86,6 +112,17 @@
 
     // Setup event listeners
     setupEventListeners();
+  }
+
+  function populateSavedSelect(saved) {
+    const select = elements.savedDataSelect;
+    select.innerHTML = '<option value="">Select saved data...</option>';
+    Object.keys(saved).forEach(name => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = `${name} (${saved[name].addresses.length} items)`;
+      select.appendChild(option);
+    });
   }
 
   function setupEventListeners() {
@@ -113,8 +150,29 @@
       elements.manualAddress.value = '';
     });
 
+    // Delete selected
+    elements.buttons.deleteSelected.addEventListener('click', deleteSelected);
+
     // Map these addresses
     elements.buttons.mapThese.addEventListener('click', mapAddresses);
+
+    // Save data
+    elements.buttons.saveData.addEventListener('click', () => {
+      elements.saveModal.classList.remove('hidden');
+      elements.saveNameInput.focus();
+    });
+
+    elements.buttons.confirmSave.addEventListener('click', saveData);
+    elements.buttons.cancelSave.addEventListener('click', () => {
+      elements.saveModal.classList.add('hidden');
+      elements.saveNameInput.value = '';
+    });
+
+    // Export data
+    elements.buttons.exportData.addEventListener('click', exportData);
+
+    // Load saved
+    elements.buttons.loadSaved.addEventListener('click', loadSaved);
 
     // Back to review from map
     elements.buttons.backReview.addEventListener('click', () => {
@@ -139,6 +197,14 @@
 
     // Clear cache
     elements.buttons.clearCache.addEventListener('click', clearCache);
+
+    // Clear saved
+    elements.buttons.clearSaved.addEventListener('click', clearSaved);
+
+    // Search area change
+    elements.searchArea.addEventListener('change', (e) => {
+      state.searchArea = e.target.value.trim();
+    });
 
     // Listen for messages from content script
     chrome.runtime.onMessage.addListener(handleMessage);
@@ -238,7 +304,7 @@
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
             <circle cx="12" cy="10" r="3"/>
           </svg>
-          <p>No addresses extracted yet</p>
+          <p>No locations extracted yet</p>
         </div>
       `;
       return;
@@ -247,20 +313,29 @@
     state.addresses.forEach((addr, index) => {
       const item = document.createElement('div');
       item.className = 'address-item';
+      item.dataset.index = index;
+
+      const isGoogleMapsLink = addr.type === 'google-maps-link';
+
       item.innerHTML = `
-        <input type="checkbox" ${state.selectedAddresses.has(index) ? 'checked' : ''} data-index="${index}">
+        <input type="checkbox" class="address-checkbox" ${state.selectedAddresses.has(index) ? 'checked' : ''}>
         <div class="address-content">
-          <div class="address-text">${escapeHtml(addr.address)}</div>
-          <input type="text" class="address-input" value="${escapeHtml(addr.address)}" data-index="${index}">
+          <div class="address-display">
+            <span class="address-text">${escapeHtml(addr.address)}</span>
+            ${isGoogleMapsLink ? '<span class="badge badge-maps">Maps Link</span>' : ''}
+          </div>
+          <input type="text" class="address-input" value="${escapeHtml(addr.address)}">
           <div class="address-meta">
-            <button class="btn-edit" data-index="${index}">Edit</button>
+            <button class="btn-edit">Edit</button>
+            <button class="btn-delete">Delete</button>
           </div>
         </div>
       `;
 
       // Checkbox handler
-      item.querySelector('input[type="checkbox"]').addEventListener('change', (e) => {
-        if (e.target.checked) {
+      const checkbox = item.querySelector('.address-checkbox');
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
           state.selectedAddresses.add(index);
         } else {
           state.selectedAddresses.delete(index);
@@ -269,24 +344,49 @@
       });
 
       // Edit handler
-      item.querySelector('.btn-edit').addEventListener('click', (e) => {
-        const idx = parseInt(e.target.dataset.index);
-        const textEl = item.querySelector('.address-text');
-        const inputEl = item.querySelector('.address-input');
-        const editBtn = e.target;
+      const editBtn = item.querySelector('.btn-edit');
+      const textEl = item.querySelector('.address-text');
+      const inputEl = item.querySelector('.address-input');
 
-        if (editBtn.textContent === 'Edit') {
-          textEl.classList.add('editing');
-          inputEl.classList.add('editing');
-          inputEl.focus();
-          editBtn.textContent = 'Save';
-        } else {
-          textEl.classList.remove('editing');
-          inputEl.classList.remove('editing');
-          state.addresses[idx].address = inputEl.value;
+      editBtn.addEventListener('click', () => {
+        if (item.classList.contains('editing')) {
+          // Save
+          item.classList.remove('editing');
+          state.addresses[index].address = inputEl.value;
           textEl.textContent = inputEl.value;
           editBtn.textContent = 'Edit';
+        } else {
+          // Start editing
+          item.classList.add('editing');
+          inputEl.value = state.addresses[index].address;
+          inputEl.focus();
+          inputEl.select();
+          editBtn.textContent = 'Save';
         }
+      });
+
+      // Save on Enter key
+      inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          editBtn.click();
+        } else if (e.key === 'Escape') {
+          item.classList.remove('editing');
+          editBtn.textContent = 'Edit';
+        }
+      });
+
+      // Delete handler
+      item.querySelector('.btn-delete').addEventListener('click', () => {
+        state.addresses.splice(index, 1);
+        state.selectedAddresses.delete(index);
+        // Rebuild selected set with updated indices
+        const newSelected = new Set();
+        state.selectedAddresses.forEach(i => {
+          if (i < index) newSelected.add(i);
+          else if (i > index) newSelected.add(i - 1);
+        });
+        state.selectedAddresses = newSelected;
+        renderAddressList();
       });
 
       list.appendChild(item);
@@ -296,8 +396,20 @@
   }
 
   function updateReviewCount() {
-    elements.reviewCount.textContent = `${state.selectedAddresses.size} of ${state.addresses.length} addresses selected`;
+    elements.reviewCount.textContent = `${state.selectedAddresses.size} of ${state.addresses.length} items selected`;
     elements.buttons.mapThese.disabled = state.selectedAddresses.size === 0;
+  }
+
+  function deleteSelected() {
+    if (state.selectedAddresses.size === 0) return;
+
+    // Remove selected items (iterate in reverse to maintain indices)
+    const toDelete = Array.from(state.selectedAddresses).sort((a, b) => b - a);
+    toDelete.forEach(index => {
+      state.addresses.splice(index, 1);
+    });
+    state.selectedAddresses.clear();
+    renderAddressList();
   }
 
   function addManualAddress() {
@@ -306,7 +418,7 @@
 
     state.addresses.push({
       address,
-      confidence: 'manual',
+      type: 'manual',
       index: state.addresses.length
     });
 
@@ -315,6 +427,78 @@
 
     elements.manualEntry.classList.add('hidden');
     elements.manualAddress.value = '';
+  }
+
+  // Save/Export functionality
+  async function saveData() {
+    const name = elements.saveNameInput.value.trim();
+    if (!name) {
+      alert('Please enter a name for this extraction.');
+      return;
+    }
+
+    const stored = await chrome.storage.local.get('savedExtractions');
+    const saved = stored.savedExtractions || {};
+
+    saved[name] = {
+      addresses: state.addresses,
+      searchArea: state.searchArea,
+      savedAt: new Date().toISOString()
+    };
+
+    await chrome.storage.local.set({ savedExtractions: saved });
+
+    elements.saveModal.classList.add('hidden');
+    elements.saveNameInput.value = '';
+
+    // Update saved dropdown
+    populateSavedSelect(saved);
+    elements.savedDataSection.classList.remove('hidden');
+
+    alert(`Saved "${name}" with ${state.addresses.length} items.`);
+  }
+
+  async function loadSaved() {
+    const name = elements.savedDataSelect.value;
+    if (!name) return;
+
+    const stored = await chrome.storage.local.get('savedExtractions');
+    const saved = stored.savedExtractions?.[name];
+
+    if (saved) {
+      state.addresses = saved.addresses;
+      state.searchArea = saved.searchArea || '';
+      state.selectedAddresses = new Set(state.addresses.map((_, i) => i));
+      elements.searchArea.value = state.searchArea;
+      renderAddressList();
+      showView('review');
+    }
+  }
+
+  function exportData() {
+    const data = {
+      addresses: state.addresses,
+      searchArea: state.searchArea,
+      exportedAt: new Date().toISOString()
+    };
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rec-mapper-export-${Date.now()}.json`;
+    a.click();
+
+    URL.revokeObjectURL(url);
+  }
+
+  async function clearSaved() {
+    if (!confirm('Are you sure you want to delete all saved extractions?')) return;
+
+    await chrome.storage.local.remove('savedExtractions');
+    elements.savedDataSection.classList.add('hidden');
+    elements.savedDataSelect.innerHTML = '<option value="">Select saved data...</option>';
   }
 
   // Mapping
@@ -329,7 +513,7 @@
     const selected = state.addresses.filter((_, i) => state.selectedAddresses.has(i));
 
     if (selected.length === 0) {
-      alert('Please select at least one address to map.');
+      alert('Please select at least one location to map.');
       return;
     }
 
@@ -337,8 +521,11 @@
     elements.geocodingStatus.classList.remove('hidden');
     elements.mapErrors.classList.add('hidden');
 
+    // Get search area suffix
+    const searchArea = elements.searchArea.value.trim();
+
     // Geocode addresses
-    const results = await geocodeAddresses(selected);
+    const results = await geocodeAddresses(selected, searchArea);
     state.geocodedResults = results;
 
     elements.geocodingStatus.classList.add('hidden');
@@ -361,22 +548,29 @@
     }
   }
 
-  async function geocodeAddresses(addresses) {
+  async function geocodeAddresses(addresses, searchArea) {
     const results = [];
 
     for (let i = 0; i < addresses.length; i++) {
       elements.geocodingProgress.textContent = `${i + 1}/${addresses.length}`;
 
+      // Append search area if provided
+      let queryAddress = addresses[i].address;
+      if (searchArea && !addresses[i].address.toLowerCase().includes(searchArea.toLowerCase())) {
+        queryAddress = `${addresses[i].address}, ${searchArea}`;
+      }
+
       const result = await new Promise(resolve => {
         chrome.runtime.sendMessage({
           action: 'geocodeAddress',
-          address: addresses[i].address,
+          address: queryAddress,
           apiKey: state.apiKey
         }, resolve);
       });
 
       results.push({
         ...addresses[i],
+        queryAddress,
         geocode: result
       });
 

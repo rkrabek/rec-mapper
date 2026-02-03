@@ -7,8 +7,8 @@
 }
 
 body {
-  width: 380px;
-  min-height: 400px;
+  width: 400px;
+  min-height: 450px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #f8fafc;
   color: #1e293b;
@@ -17,7 +17,7 @@ body {
 .popup-container {
   display: flex;
   flex-direction: column;
-  min-height: 400px;
+  min-height: 450px;
 }
 
 /* Header */
@@ -134,7 +134,15 @@ body {
   width: 100%;
   padding: 14px 24px;
   font-size: 15px;
-  margin-top: 16px;
+}
+
+.btn-danger {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.btn-danger:hover {
+  background: #fecaca;
 }
 
 .btn-icon {
@@ -208,6 +216,29 @@ body {
   color: #667eea;
 }
 
+/* Saved section */
+.saved-section {
+  margin-top: 16px;
+  padding: 16px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.saved-section.hidden {
+  display: none;
+}
+
+.saved-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.saved-section select {
+  margin-bottom: 8px;
+}
+
 /* Selecting view */
 .selecting-card {
   background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
@@ -244,7 +275,7 @@ body {
 
 /* Review view */
 .review-header {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .review-header h2 {
@@ -257,8 +288,36 @@ body {
   color: #64748b;
 }
 
+/* Search area section */
+.search-area-section {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+}
+
+.search-area-section label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #92400e;
+  margin-bottom: 6px;
+}
+
+.search-area-section .input {
+  margin-bottom: 4px;
+}
+
+.search-area-section .hint {
+  font-size: 11px;
+  color: #a16207;
+  margin: 0;
+}
+
+/* Address list */
 .address-list {
-  max-height: 200px;
+  max-height: 180px;
   overflow-y: auto;
   background: white;
   border-radius: 8px;
@@ -277,16 +336,24 @@ body {
   border-bottom: none;
 }
 
-.address-item input[type="checkbox"] {
-  margin-top: 2px;
+.address-checkbox {
+  margin-top: 4px;
   width: 18px;
   height: 18px;
   accent-color: #667eea;
+  flex-shrink: 0;
 }
 
 .address-content {
   flex: 1;
   min-width: 0;
+}
+
+.address-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .address-text {
@@ -295,69 +362,92 @@ body {
   word-break: break-word;
 }
 
-.address-text.editing {
+/* Hide text when editing, show input */
+.address-item.editing .address-display {
   display: none;
+}
+
+.address-item.editing .address-input {
+  display: block;
 }
 
 .address-input {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  font-size: 13px;
   display: none;
+  width: 100%;
+  padding: 8px 10px;
+  border: 2px solid #667eea;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 8px;
 }
 
-.address-input.editing {
-  display: block;
+.address-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
 }
 
 .address-meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
-.confidence-badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.confidence-high {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.confidence-medium {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.confidence-low {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.btn-edit {
+.btn-edit,
+.btn-delete {
   font-size: 11px;
   color: #667eea;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
-.btn-edit:hover {
-  text-decoration: underline;
+.btn-edit:hover,
+.btn-delete:hover {
+  background: #f1f5f9;
+}
+
+.btn-delete {
+  color: #dc2626;
+}
+
+.btn-delete:hover {
+  background: #fef2f2;
+}
+
+/* Badge */
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.badge-maps {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .review-actions {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+/* Primary actions */
+.primary-actions {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.primary-actions .btn-secondary {
+  width: 100%;
 }
 
 /* Manual entry */
@@ -482,7 +572,7 @@ body {
   background: white;
   border-radius: 12px;
   padding: 24px;
-  width: 320px;
+  width: 340px;
   max-width: 90%;
 }
 
