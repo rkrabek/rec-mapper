@@ -74,7 +74,7 @@
       <div class="search-area-section">
         <label for="search-area">Search Area (appended to all locations):</label>
         <input type="text" id="search-area" placeholder="e.g., San Francisco, CA" class="input">
-        <p class="hint">Helps Google Maps find places when only a name is extracted</p>
+        <p class="hint">Helps find places when only a name is extracted</p>
       </div>
 
       <div class="address-list" id="address-list">
@@ -111,7 +111,7 @@
           Export JSON
         </button>
         <button id="btn-map-these" class="btn btn-primary btn-large">
-          Map with Google Maps
+          Map These Locations
         </button>
       </div>
     </div>
@@ -134,7 +134,7 @@
 
       <div id="geocoding-status" class="geocoding-status hidden">
         <div class="spinner small"></div>
-        <span>Geocoding locations...</span>
+        <span id="geocoding-text">Geocoding locations...</span>
         <span id="geocoding-progress">0/0</span>
       </div>
 
@@ -142,13 +142,33 @@
         <h4>Could not geocode:</h4>
         <ul id="error-list"></ul>
       </div>
+
+      <!-- Disambiguation Modal -->
+      <div id="disambiguation-section" class="disambiguation-section hidden">
+        <h4>Multiple matches found for: <span id="disambig-address"></span></h4>
+        <div id="disambig-options" class="disambig-options"></div>
+        <button id="btn-skip-disambig" class="btn btn-secondary btn-small">Skip this location</button>
+      </div>
+
+      <!-- Manual Coordinate Entry -->
+      <div id="manual-coord-section" class="manual-coord-section hidden">
+        <h4>No results for: <span id="manual-coord-address"></span></h4>
+        <div class="coord-inputs">
+          <input type="text" id="manual-lat" placeholder="Latitude" class="input input-small">
+          <input type="text" id="manual-lng" placeholder="Longitude" class="input input-small">
+        </div>
+        <div class="coord-buttons">
+          <button id="btn-add-coords" class="btn btn-primary btn-small">Add Location</button>
+          <button id="btn-skip-coords" class="btn btn-secondary btn-small">Skip</button>
+        </div>
+      </div>
     </div>
 
     <!-- API Key Modal -->
     <div id="api-key-modal" class="modal hidden">
       <div class="modal-content">
         <h2>Google Maps API Key</h2>
-        <p>Enter your Google Maps API key to enable geocoding and map display.</p>
+        <p>Enter your Google Maps API key to use Google Maps for geocoding and display.</p>
         <input type="text" id="api-key-input" placeholder="AIza..." class="input">
         <div class="api-key-help">
           <a href="https://developers.google.com/maps/documentation/javascript/get-api-key" target="_blank">
@@ -188,17 +208,42 @@
     <!-- Settings Panel -->
     <div id="settings-panel" class="settings-panel hidden">
       <h3>Settings</h3>
+
+      <!-- Map Provider Selection -->
       <div class="setting-item">
+        <label>Map Provider</label>
+        <div class="radio-group">
+          <label class="radio-option">
+            <input type="radio" name="map-provider" value="osm" checked>
+            <span class="radio-label">
+              <strong>OpenStreetMap</strong>
+              <small>Free, no API key needed</small>
+            </span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="map-provider" value="google">
+            <span class="radio-label">
+              <strong>Google Maps</strong>
+              <small>Requires API key</small>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Google API Key (conditional) -->
+      <div id="google-key-section" class="setting-item hidden">
         <label>Google Maps API Key</label>
         <div class="setting-value">
           <span id="api-key-status">Not set</span>
           <button id="btn-change-api-key" class="btn btn-secondary btn-small">Change</button>
         </div>
       </div>
+
       <div class="setting-item">
-        <label>Clear Cached Geocodes</label>
+        <label>Clear Geocode Cache</label>
         <button id="btn-clear-cache" class="btn btn-secondary btn-small">Clear Cache</button>
       </div>
+
       <div class="setting-item">
         <label>Clear Saved Extractions</label>
         <button id="btn-clear-saved" class="btn btn-secondary btn-small">Clear All</button>
@@ -206,6 +251,11 @@
     </div>
   </div>
 
+  <!-- Load scripts -->
+  <script src="geocoder.js"></script>
+  <script src="map-provider.js"></script>
+  <script src="leaflet-provider.js"></script>
+  <script src="google-provider.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

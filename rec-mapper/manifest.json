@@ -1,12 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Rec Mapper",
-  "version": "1.0.0",
-  "description": "Extract addresses from web pages using click-based pattern matching and display them on Google Maps",
+  "version": "1.1.0",
+  "description": "Extract addresses from web pages using click-based pattern matching and display them on OpenStreetMap or Google Maps",
   "permissions": [
     "activeTab",
     "storage",
     "scripting"
+  ],
+  "host_permissions": [
+    "https://nominatim.openstreetmap.org/*",
+    "https://maps.googleapis.com/*",
+    "https://*.tile.openstreetmap.org/*",
+    "https://unpkg.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -37,5 +43,8 @@
       "resources": ["content.css"],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' https://unpkg.com https://maps.googleapis.com; object-src 'self'"
+  }
 }

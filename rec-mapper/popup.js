@@ -11,16 +11,19 @@
     addresses: [],
     selectedAddresses: new Set(),
     searchArea: '',
+    mapProvider: 'osm', // 'osm' or 'google'
     apiKey: null,
     geocodedResults: [],
-    map: null,
-    markers: []
+    mapInstance: null,
+    // For disambiguation handling
+    pendingGeocode: null,
+    geocodeQueue: [],
+    currentGeocodingIndex: 0
   };
 
-  // DOM Elements - populated after DOM ready
+  // DOM Elements
   let elements = {};
 
-  // Initialize DOM references
   function initElements() {
     elements = {
       views: {
@@ -49,7 +52,10 @@
         manualCancel: document.getElementById('btn-manual-cancel'),
         loadSaved: document.getElementById('btn-load-saved'),
         confirmSave: document.getElementById('btn-confirm-save'),
-        cancelSave: document.getElementById('btn-cancel-save')
+        cancelSave: document.getElementById('btn-cancel-save'),
+        skipDisambig: document.getElementById('btn-skip-disambig'),
+        addCoords: document.getElementById('btn-add-coords'),
+        skipCoords: document.getElementById('btn-skip-coords')
       },
       selectionCount: document.getElementById('selection-count'),
       reviewCount: document.getElementById('review-count'),
@@ -58,19 +64,29 @@
       mapCount: document.getElementById('map-count'),
       mapContainer: document.getElementById('map'),
       geocodingStatus: document.getElementById('geocoding-status'),
+      geocodingText: document.getElementById('geocoding-text'),
       geocodingProgress: document.getElementById('geocoding-progress'),
       mapErrors: document.getElementById('map-errors'),
       errorList: document.getElementById('error-list'),
       apiKeyModal: document.getElementById('api-key-modal'),
       apiKeyInput: document.getElementById('api-key-input'),
       apiKeyStatus: document.getElementById('api-key-status'),
+      googleKeySection: document.getElementById('google-key-section'),
       settingsPanel: document.getElementById('settings-panel'),
       manualEntry: document.getElementById('manual-entry'),
       manualAddress: document.getElementById('manual-address'),
       savedDataSection: document.getElementById('saved-data-section'),
       savedDataSelect: document.getElementById('saved-data-select'),
       saveModal: document.getElementById('save-modal'),
-      saveNameInput: document.getElementById('save-name-input')
+      saveNameInput: document.getElementById('save-name-input'),
+      disambigSection: document.getElementById('disambiguation-section'),
+      disambigAddress: document.getElementById('disambig-address'),
+      disambigOptions: document.getElementById('disambig-options'),
+      manualCoordSection: document.getElementById('manual-coord-section'),
+      manualCoordAddress: document.getElementById('manual-coord-address'),
+      manualLat: document.getElementById('manual-lat'),
+      manualLng: document.getElementById('manual-lng'),
+      mapProviderRadios: document.querySelectorAll('input[name="map-provider"]')
     };
   }
 
@@ -85,12 +101,28 @@
   async function init() {
     initElements();
 
-    // Load API key from storage
-    const stored = await chrome.storage.local.get(['googleMapsApiKey', 'savedExtractions']);
+    // Load settings from storage
+    const stored = await chrome.storage.local.get([
+      'googleMapsApiKey',
+      'savedExtractions',
+      'mapProvider'
+    ]);
+
     if (stored.googleMapsApiKey) {
       state.apiKey = stored.googleMapsApiKey;
       elements.apiKeyStatus.textContent = '••••' + state.apiKey.slice(-4);
     }
+
+    if (stored.mapProvider) {
+      state.mapProvider = stored.mapProvider;
+      // Update radio buttons
+      elements.mapProviderRadios.forEach(radio => {
+        radio.checked = radio.value === state.mapProvider;
+      });
+    }
+
+    // Show/hide Google API key section based on provider
+    updateProviderUI();
 
     // Show saved extractions if any
     if (stored.savedExtractions && Object.keys(stored.savedExtractions).length > 0) {
@@ -110,8 +142,15 @@
       showView('review');
     }
 
-    // Setup event listeners
     setupEventListeners();
+  }
+
+  function updateProviderUI() {
+    if (state.mapProvider === 'google') {
+      elements.googleKeySection.classList.remove('hidden');
+    } else {
+      elements.googleKeySection.classList.add('hidden');
+    }
   }
 
   function populateSavedSelect(saved) {
@@ -176,12 +215,30 @@
 
     // Back to review from map
     elements.buttons.backReview.addEventListener('click', () => {
+      if (state.mapInstance) {
+        state.mapInstance.destroy();
+        state.mapInstance = null;
+      }
       showView('review');
     });
 
     // Settings
     elements.buttons.settings.addEventListener('click', () => {
       elements.settingsPanel.classList.toggle('hidden');
+    });
+
+    // Map provider selection
+    elements.mapProviderRadios.forEach(radio => {
+      radio.addEventListener('change', async (e) => {
+        state.mapProvider = e.target.value;
+        await chrome.storage.local.set({ mapProvider: state.mapProvider });
+        updateProviderUI();
+
+        // If switching to Google and no API key, show modal
+        if (state.mapProvider === 'google' && !state.apiKey) {
+          elements.apiKeyModal.classList.remove('hidden');
+        }
+      });
     });
 
     // API Key
@@ -193,6 +250,13 @@
     elements.buttons.saveApiKey.addEventListener('click', saveApiKey);
     elements.buttons.cancelApiKey.addEventListener('click', () => {
       elements.apiKeyModal.classList.add('hidden');
+      // If canceling and no key, switch back to OSM
+      if (!state.apiKey && state.mapProvider === 'google') {
+        state.mapProvider = 'osm';
+        elements.mapProviderRadios.forEach(r => r.checked = r.value === 'osm');
+        updateProviderUI();
+        chrome.storage.local.set({ mapProvider: 'osm' });
+      }
     });
 
     // Clear cache
@@ -205,6 +269,13 @@
     elements.searchArea.addEventListener('change', (e) => {
       state.searchArea = e.target.value.trim();
     });
+
+    // Disambiguation handlers
+    elements.buttons.skipDisambig.addEventListener('click', skipCurrentGeocode);
+
+    // Manual coordinate handlers
+    elements.buttons.addCoords.addEventListener('click', addManualCoordinates);
+    elements.buttons.skipCoords.addEventListener('click', skipCurrentGeocode);
 
     // Listen for messages from content script
     chrome.runtime.onMessage.addListener(handleMessage);
@@ -228,7 +299,6 @@
       showView('selecting');
       elements.selectionCount.textContent = '0';
     } catch (error) {
-      // Content script might not be loaded, inject it
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         files: ['address-parser.js', 'pattern-matcher.js', 'content.js']
@@ -238,7 +308,6 @@
         files: ['content.css']
       });
 
-      // Try again after a short delay
       setTimeout(async () => {
         try {
           await chrome.tabs.sendMessage(tab.id, { action: 'startSelection' });
@@ -252,37 +321,27 @@
 
   async function cancelSelection() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
     try {
       await chrome.tabs.sendMessage(tab.id, { action: 'cancelSelection' });
-    } catch (e) {
-      // Ignore errors
-    }
-
+    } catch (e) {}
     showView('selection');
   }
 
   async function cleanupContentScript() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
     try {
       await chrome.tabs.sendMessage(tab.id, { action: 'cleanup' });
-    } catch (e) {
-      // Ignore errors
-    }
+    } catch (e) {}
   }
 
-  // Handle messages from content script
   function handleMessage(message) {
     switch (message.action) {
       case 'selectionCancelled':
         showView('selection');
         break;
-
       case 'matchesFound':
         elements.selectionCount.textContent = message.count;
         break;
-
       case 'addressesExtracted':
         state.addresses = message.addresses;
         state.selectedAddresses = new Set(state.addresses.map((_, i) => i));
@@ -332,7 +391,6 @@
         </div>
       `;
 
-      // Checkbox handler
       const checkbox = item.querySelector('.address-checkbox');
       checkbox.addEventListener('change', () => {
         if (checkbox.checked) {
@@ -343,20 +401,17 @@
         updateReviewCount();
       });
 
-      // Edit handler
       const editBtn = item.querySelector('.btn-edit');
       const textEl = item.querySelector('.address-text');
       const inputEl = item.querySelector('.address-input');
 
       editBtn.addEventListener('click', () => {
         if (item.classList.contains('editing')) {
-          // Save
           item.classList.remove('editing');
           state.addresses[index].address = inputEl.value;
           textEl.textContent = inputEl.value;
           editBtn.textContent = 'Edit';
         } else {
-          // Start editing
           item.classList.add('editing');
           inputEl.value = state.addresses[index].address;
           inputEl.focus();
@@ -365,21 +420,17 @@
         }
       });
 
-      // Save on Enter key
       inputEl.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          editBtn.click();
-        } else if (e.key === 'Escape') {
+        if (e.key === 'Enter') editBtn.click();
+        else if (e.key === 'Escape') {
           item.classList.remove('editing');
           editBtn.textContent = 'Edit';
         }
       });
 
-      // Delete handler
       item.querySelector('.btn-delete').addEventListener('click', () => {
         state.addresses.splice(index, 1);
         state.selectedAddresses.delete(index);
-        // Rebuild selected set with updated indices
         const newSelected = new Set();
         state.selectedAddresses.forEach(i => {
           if (i < index) newSelected.add(i);
@@ -402,12 +453,8 @@
 
   function deleteSelected() {
     if (state.selectedAddresses.size === 0) return;
-
-    // Remove selected items (iterate in reverse to maintain indices)
     const toDelete = Array.from(state.selectedAddresses).sort((a, b) => b - a);
-    toDelete.forEach(index => {
-      state.addresses.splice(index, 1);
-    });
+    toDelete.forEach(index => state.addresses.splice(index, 1));
     state.selectedAddresses.clear();
     renderAddressList();
   }
@@ -429,11 +476,11 @@
     elements.manualAddress.value = '';
   }
 
-  // Save/Export functionality
+  // Save/Export
   async function saveData() {
     const name = elements.saveNameInput.value.trim();
     if (!name) {
-      alert('Please enter a name for this extraction.');
+      alert('Please enter a name.');
       return;
     }
 
@@ -451,7 +498,6 @@
     elements.saveModal.classList.add('hidden');
     elements.saveNameInput.value = '';
 
-    // Update saved dropdown
     populateSavedSelect(saved);
     elements.savedDataSection.classList.remove('hidden');
 
@@ -484,18 +530,15 @@
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-
     const a = document.createElement('a');
     a.href = url;
     a.download = `rec-mapper-export-${Date.now()}.json`;
     a.click();
-
     URL.revokeObjectURL(url);
   }
 
   async function clearSaved() {
-    if (!confirm('Are you sure you want to delete all saved extractions?')) return;
-
+    if (!confirm('Delete all saved extractions?')) return;
     await chrome.storage.local.remove('savedExtractions');
     elements.savedDataSection.classList.add('hidden');
     elements.savedDataSelect.innerHTML = '<option value="">Select saved data...</option>';
@@ -503,188 +546,245 @@
 
   // Mapping
   async function mapAddresses() {
-    // Check for API key
-    if (!state.apiKey) {
+    // Check for API key if using Google
+    if (state.mapProvider === 'google' && !state.apiKey) {
       elements.apiKeyModal.classList.remove('hidden');
       return;
     }
 
-    // Get selected addresses
     const selected = state.addresses.filter((_, i) => state.selectedAddresses.has(i));
-
     if (selected.length === 0) {
-      alert('Please select at least one location to map.');
+      alert('Please select at least one location.');
       return;
     }
 
     showView('map');
     elements.geocodingStatus.classList.remove('hidden');
     elements.mapErrors.classList.add('hidden');
+    elements.disambigSection.classList.add('hidden');
+    elements.manualCoordSection.classList.add('hidden');
 
-    // Get search area suffix
+    // Prepare geocoding queue
     const searchArea = elements.searchArea.value.trim();
+    state.geocodeQueue = selected.map(addr => {
+      let queryAddress = addr.address;
+      if (searchArea && !addr.address.toLowerCase().includes(searchArea.toLowerCase())) {
+        queryAddress = `${addr.address}, ${searchArea}`;
+      }
+      return { ...addr, queryAddress };
+    });
 
-    // Geocode addresses
-    const results = await geocodeAddresses(selected, searchArea);
-    state.geocodedResults = results;
+    state.geocodedResults = [];
+    state.currentGeocodingIndex = 0;
 
+    // Start geocoding
+    await processGeocodeQueue();
+  }
+
+  async function processGeocodeQueue() {
+    const errors = [];
+
+    while (state.currentGeocodingIndex < state.geocodeQueue.length) {
+      const item = state.geocodeQueue[state.currentGeocodingIndex];
+
+      // Update progress
+      elements.geocodingText.textContent = `Geocoding: ${item.address.substring(0, 30)}...`;
+      elements.geocodingProgress.textContent = `${state.currentGeocodingIndex + 1}/${state.geocodeQueue.length}`;
+
+      const result = await Geocoder.geocode(item.queryAddress, state.mapProvider, state.apiKey);
+
+      if (result.success) {
+        // Check if disambiguation is needed
+        if (result.multipleResults && result.allResults.length > 1) {
+          // Show disambiguation UI
+          state.pendingGeocode = { item, result };
+          showDisambiguation(item.address, result.allResults);
+          return; // Wait for user selection
+        }
+
+        state.geocodedResults.push({
+          ...item,
+          geocode: result
+        });
+      } else if (result.noResults) {
+        // Show manual coordinate entry
+        state.pendingGeocode = { item, result };
+        showManualCoordEntry(item.address);
+        return; // Wait for user input
+      } else {
+        errors.push({ address: item.address, error: result.error });
+      }
+
+      state.currentGeocodingIndex++;
+    }
+
+    // Geocoding complete
     elements.geocodingStatus.classList.add('hidden');
 
-    // Show errors if any
-    const errors = results.filter(r => !r.geocode.success);
     if (errors.length > 0) {
       elements.mapErrors.classList.remove('hidden');
       elements.errorList.innerHTML = errors
-        .map(e => `<li>${escapeHtml(e.address)}: ${e.geocode.error}</li>`)
+        .map(e => `<li>${escapeHtml(e.address)}: ${e.error}</li>`)
         .join('');
     }
 
-    // Show map
-    const successful = results.filter(r => r.geocode.success);
-    elements.mapCount.textContent = `${successful.length} locations mapped`;
+    elements.mapCount.textContent = `${state.geocodedResults.length} locations mapped`;
 
-    if (successful.length > 0) {
-      initMap(successful);
+    if (state.geocodedResults.length > 0) {
+      await displayMap();
     }
   }
 
-  async function geocodeAddresses(addresses, searchArea) {
-    const results = [];
+  function showDisambiguation(address, options) {
+    elements.geocodingStatus.classList.add('hidden');
+    elements.disambigSection.classList.remove('hidden');
+    elements.disambigAddress.textContent = address;
 
-    for (let i = 0; i < addresses.length; i++) {
-      elements.geocodingProgress.textContent = `${i + 1}/${addresses.length}`;
+    elements.disambigOptions.innerHTML = options.slice(0, 5).map((opt, i) => `
+      <div class="disambig-option" data-index="${i}">
+        ${escapeHtml(opt.formattedAddress)}
+      </div>
+    `).join('');
 
-      // Append search area if provided
-      let queryAddress = addresses[i].address;
-      if (searchArea && !addresses[i].address.toLowerCase().includes(searchArea.toLowerCase())) {
-        queryAddress = `${addresses[i].address}, ${searchArea}`;
+    // Add click handlers
+    elements.disambigOptions.querySelectorAll('.disambig-option').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt(el.dataset.index);
+        selectDisambigOption(options[idx]);
+      });
+    });
+  }
+
+  function selectDisambigOption(option) {
+    const { item } = state.pendingGeocode;
+
+    state.geocodedResults.push({
+      ...item,
+      geocode: {
+        success: true,
+        lat: option.lat,
+        lng: option.lng,
+        formattedAddress: option.formattedAddress,
+        placeId: option.placeId
       }
+    });
 
-      const result = await new Promise(resolve => {
-        chrome.runtime.sendMessage({
-          action: 'geocodeAddress',
-          address: queryAddress,
-          apiKey: state.apiKey
-        }, resolve);
-      });
+    elements.disambigSection.classList.add('hidden');
+    elements.geocodingStatus.classList.remove('hidden');
+    state.pendingGeocode = null;
+    state.currentGeocodingIndex++;
+    processGeocodeQueue();
+  }
 
-      results.push({
-        ...addresses[i],
-        queryAddress,
-        geocode: result
-      });
+  function showManualCoordEntry(address) {
+    elements.geocodingStatus.classList.add('hidden');
+    elements.manualCoordSection.classList.remove('hidden');
+    elements.manualCoordAddress.textContent = address;
+    elements.manualLat.value = '';
+    elements.manualLng.value = '';
+  }
 
-      // Small delay to avoid rate limiting
-      if (i < addresses.length - 1) {
-        await new Promise(r => setTimeout(r, 100));
+  function addManualCoordinates() {
+    const lat = parseFloat(elements.manualLat.value);
+    const lng = parseFloat(elements.manualLng.value);
+
+    if (isNaN(lat) || isNaN(lng)) {
+      alert('Please enter valid coordinates.');
+      return;
+    }
+
+    const { item } = state.pendingGeocode;
+
+    state.geocodedResults.push({
+      ...item,
+      geocode: {
+        success: true,
+        lat,
+        lng,
+        formattedAddress: item.address,
+        manual: true
       }
-    }
+    });
 
-    return results;
+    elements.manualCoordSection.classList.add('hidden');
+    elements.geocodingStatus.classList.remove('hidden');
+    state.pendingGeocode = null;
+    state.currentGeocodingIndex++;
+    processGeocodeQueue();
   }
 
-  function initMap(locations) {
-    // Load Google Maps if not already loaded
-    if (!window.google || !window.google.maps) {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${state.apiKey}&callback=initMapCallback`;
-      script.async = true;
-      script.defer = true;
-
-      window.initMapCallback = () => {
-        createMap(locations);
-      };
-
-      document.head.appendChild(script);
-    } else {
-      createMap(locations);
-    }
+  function skipCurrentGeocode() {
+    elements.disambigSection.classList.add('hidden');
+    elements.manualCoordSection.classList.add('hidden');
+    elements.geocodingStatus.classList.remove('hidden');
+    state.pendingGeocode = null;
+    state.currentGeocodingIndex++;
+    processGeocodeQueue();
   }
 
-  function createMap(locations) {
-    // Clear existing markers
-    state.markers.forEach(m => m.setMap(null));
-    state.markers = [];
+  async function displayMap() {
+    // Clean up existing map
+    if (state.mapInstance) {
+      state.mapInstance.destroy();
+    }
 
-    // Calculate bounds
-    const bounds = new google.maps.LatLngBounds();
-    locations.forEach(loc => {
-      bounds.extend({ lat: loc.geocode.lat, lng: loc.geocode.lng });
-    });
+    try {
+      // Create map provider instance
+      state.mapInstance = await MapProviderFactory.create(
+        state.mapProvider,
+        elements.mapContainer,
+        { apiKey: state.apiKey }
+      );
 
-    // Create map
-    state.map = new google.maps.Map(elements.mapContainer, {
-      center: bounds.getCenter(),
-      zoom: 12,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: false
-    });
+      // Add markers
+      state.geocodedResults.forEach((loc, index) => {
+        const matchQuality = loc.geocode.manual ? 'Manual entry' :
+          loc.geocode.partialMatch ? 'Approximate match' :
+          loc.geocode.locationType === 'ROOFTOP' ? 'Exact match' : 'Approximate';
 
-    // Fit bounds
-    state.map.fitBounds(bounds);
-
-    // Add markers
-    locations.forEach((loc, index) => {
-      const marker = new google.maps.Marker({
-        position: { lat: loc.geocode.lat, lng: loc.geocode.lng },
-        map: state.map,
-        title: loc.address,
-        label: {
-          text: String(index + 1),
-          color: 'white',
-          fontWeight: 'bold'
-        }
+        state.mapInstance.addMarker(
+          loc.geocode.lat,
+          loc.geocode.lng,
+          loc.address,
+          {
+            label: index + 1,
+            formattedAddress: loc.geocode.formattedAddress,
+            originalAddress: loc.address,
+            matchQuality
+          }
+        );
       });
 
-      // Show match quality indicator
-      const matchQuality = loc.geocode.partialMatch ? 'Approximate match' :
-                          loc.geocode.locationType === 'ROOFTOP' ? 'Exact match' :
-                          loc.geocode.locationType === 'RANGE_INTERPOLATED' ? 'Interpolated' : 'Approximate';
+      // Fit bounds to show all markers
+      state.mapInstance.fitBounds();
 
-      const infoWindow = new google.maps.InfoWindow({
-        content: `
-          <div style="max-width: 220px; font-family: sans-serif; font-size: 13px;">
-            <strong>${escapeHtml(loc.geocode.formattedAddress || loc.address)}</strong>
-            <div style="margin-top: 6px; font-size: 11px; color: #666;">
-              <em>Original: ${escapeHtml(loc.address)}</em>
-            </div>
-            <div style="margin-top: 4px; font-size: 10px; color: ${loc.geocode.partialMatch ? '#b45309' : '#059669'};">
-              ${matchQuality}
-            </div>
-          </div>
-        `
-      });
-
-      marker.addListener('click', () => {
-        infoWindow.open(state.map, marker);
-      });
-
-      state.markers.push(marker);
-    });
+    } catch (error) {
+      console.error('Map error:', error);
+      elements.mapErrors.classList.remove('hidden');
+      elements.errorList.innerHTML = `<li>Failed to load map: ${error.message}</li>`;
+    }
   }
 
   // API Key management
   async function saveApiKey() {
     const key = elements.apiKeyInput.value.trim();
-
     if (!key) {
       alert('Please enter an API key.');
       return;
     }
 
-    // Validate the key with a test request
+    // Validate key
     try {
       const testUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=test&key=${key}`;
       const response = await fetch(testUrl);
       const data = await response.json();
 
       if (data.status === 'REQUEST_DENIED') {
-        alert('Invalid API key. Please check your key and try again.');
+        alert('Invalid API key.');
         return;
       }
     } catch (error) {
-      alert('Could not validate API key. Please try again.');
+      alert('Could not validate API key.');
       return;
     }
 
@@ -695,22 +795,14 @@
     elements.apiKeyModal.classList.add('hidden');
     elements.apiKeyInput.value = '';
 
-    // If we were trying to map, continue
     if (state.currentView === 'map') {
       mapAddresses();
     }
   }
 
   async function clearCache() {
-    const items = await chrome.storage.local.get();
-    const keysToRemove = Object.keys(items).filter(k => k.startsWith('geocode_'));
-
-    if (keysToRemove.length > 0) {
-      await chrome.storage.local.remove(keysToRemove);
-      alert(`Cleared ${keysToRemove.length} cached geocode results.`);
-    } else {
-      alert('Cache is already empty.');
-    }
+    const count = await Geocoder.clearCache();
+    alert(`Cleared ${count} cached geocode results.`);
   }
 
   // Utilities
