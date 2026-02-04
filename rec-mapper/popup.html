@@ -14,8 +14,8 @@
       <p class="tagline">Extract locations and map them</p>
     </header>
 
-    <!-- View: Selection Mode -->
-    <div id="view-selection" class="view active">
+    <!-- Main View -->
+    <div id="view-main" class="view active">
       <div class="card">
         <div class="card-icon">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -30,12 +30,15 @@
       </div>
 
       <div class="tips">
-        <h3>Tips:</h3>
-        <ul>
-          <li>Click on listing cards, links, or text containing locations</li>
-          <li>Google Maps links are automatically detected</li>
-          <li>Press ESC to cancel selection mode</li>
-        </ul>
+        <h3>How it works:</h3>
+        <ol>
+          <li>Click "Start Selection" to enter selection mode</li>
+          <li>Click on 2-3 similar items on the page</li>
+          <li>Click "Find Matches" to detect all similar items</li>
+          <li>Review and exclude false positives</li>
+          <li>Add a search area (optional) for better geocoding</li>
+          <li>Click "Map Locations" to view on map in new tab</li>
+        </ol>
       </div>
 
       <!-- Load saved data -->
@@ -44,123 +47,19 @@
         <select id="saved-data-select" class="input">
           <option value="">Select saved data...</option>
         </select>
-        <button id="btn-load-saved" class="btn btn-secondary btn-small">Load</button>
+        <button id="btn-load-saved" class="btn btn-secondary btn-small">Load & Map</button>
       </div>
     </div>
 
-    <!-- View: Selecting (in progress) -->
+    <!-- Selecting View (shown when selection mode is active) -->
     <div id="view-selecting" class="view">
       <div class="card selecting-card">
         <div class="spinner"></div>
         <h2>Selection Mode Active</h2>
-        <p>Click on similar elements in the page. The extension is waiting for your selections.</p>
-        <div class="selection-status">
-          <span id="selection-count">0</span> elements selected
-        </div>
+        <p>Click on similar elements in the page. Use the overlay panel to review and map your selections.</p>
         <button id="btn-cancel-selection" class="btn btn-secondary">
           Cancel Selection
         </button>
-      </div>
-    </div>
-
-    <!-- View: Review Extracted Data -->
-    <div id="view-review" class="view">
-      <div class="review-header">
-        <h2>Extracted Locations</h2>
-        <p id="review-count">0 items extracted</p>
-      </div>
-
-      <!-- Search Area Input -->
-      <div class="search-area-section">
-        <label for="search-area">Search Area (appended to all locations):</label>
-        <input type="text" id="search-area" placeholder="e.g., San Francisco, CA" class="input">
-        <p class="hint">Helps find places when only a name is extracted</p>
-      </div>
-
-      <div class="address-list" id="address-list">
-        <!-- Addresses will be inserted here -->
-      </div>
-
-      <div class="review-actions">
-        <button id="btn-add-manual" class="btn btn-secondary btn-small">
-          + Add Manually
-        </button>
-        <button id="btn-back-selection" class="btn btn-secondary btn-small">
-          Re-select
-        </button>
-        <button id="btn-delete-selected" class="btn btn-secondary btn-small btn-danger">
-          Delete Selected
-        </button>
-      </div>
-
-      <!-- Manual Entry Form -->
-      <div id="manual-entry" class="manual-entry hidden">
-        <input type="text" id="manual-address" placeholder="Enter location or address..." class="input">
-        <div class="manual-entry-buttons">
-          <button id="btn-manual-add" class="btn btn-primary btn-small">Add</button>
-          <button id="btn-manual-cancel" class="btn btn-secondary btn-small">Cancel</button>
-        </div>
-      </div>
-
-      <!-- Action buttons -->
-      <div class="primary-actions">
-        <button id="btn-save-data" class="btn btn-secondary">
-          Save for Later
-        </button>
-        <button id="btn-export-data" class="btn btn-secondary">
-          Export JSON
-        </button>
-        <button id="btn-map-these" class="btn btn-primary btn-large">
-          Map These Locations
-        </button>
-      </div>
-    </div>
-
-    <!-- View: Map -->
-    <div id="view-map" class="view">
-      <div class="map-header">
-        <button id="btn-back-review" class="btn-back">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 12H5m7-7l-7 7 7 7"/>
-          </svg>
-          Back to Review
-        </button>
-        <span id="map-count">0 locations mapped</span>
-      </div>
-
-      <div id="map-container" class="map-container">
-        <div id="map" class="map"></div>
-      </div>
-
-      <div id="geocoding-status" class="geocoding-status hidden">
-        <div class="spinner small"></div>
-        <span id="geocoding-text">Geocoding locations...</span>
-        <span id="geocoding-progress">0/0</span>
-      </div>
-
-      <div id="map-errors" class="map-errors hidden">
-        <h4>Could not geocode:</h4>
-        <ul id="error-list"></ul>
-      </div>
-
-      <!-- Disambiguation Modal -->
-      <div id="disambiguation-section" class="disambiguation-section hidden">
-        <h4>Multiple matches found for: <span id="disambig-address"></span></h4>
-        <div id="disambig-options" class="disambig-options"></div>
-        <button id="btn-skip-disambig" class="btn btn-secondary btn-small">Skip this location</button>
-      </div>
-
-      <!-- Manual Coordinate Entry -->
-      <div id="manual-coord-section" class="manual-coord-section hidden">
-        <h4>No results for: <span id="manual-coord-address"></span></h4>
-        <div class="coord-inputs">
-          <input type="text" id="manual-lat" placeholder="Latitude" class="input input-small">
-          <input type="text" id="manual-lng" placeholder="Longitude" class="input input-small">
-        </div>
-        <div class="coord-buttons">
-          <button id="btn-add-coords" class="btn btn-primary btn-small">Add Location</button>
-          <button id="btn-skip-coords" class="btn btn-secondary btn-small">Skip</button>
-        </div>
       </div>
     </div>
 
@@ -178,19 +77,6 @@
         <div class="modal-buttons">
           <button id="btn-save-api-key" class="btn btn-primary">Save Key</button>
           <button id="btn-cancel-api-key" class="btn btn-secondary">Cancel</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Save Modal -->
-    <div id="save-modal" class="modal hidden">
-      <div class="modal-content">
-        <h2>Save Extraction</h2>
-        <p>Give this extraction a name to load it later.</p>
-        <input type="text" id="save-name-input" placeholder="e.g., SF Restaurants" class="input">
-        <div class="modal-buttons">
-          <button id="btn-confirm-save" class="btn btn-primary">Save</button>
-          <button id="btn-cancel-save" class="btn btn-secondary">Cancel</button>
         </div>
       </div>
     </div>
@@ -253,9 +139,6 @@
 
   <!-- Load scripts -->
   <script src="geocoder.js"></script>
-  <script src="map-provider.js"></script>
-  <script src="leaflet-provider.js"></script>
-  <script src="google-provider.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -79,9 +79,13 @@
     state.resultsPanel = panel;
   }
 
-  function renderResultsPanel(panel) {
+  function renderResultsPanel(panel, preserveScroll = false) {
     if (!panel) panel = state.resultsPanel;
     if (!panel) return;
+
+    // Preserve scroll position
+    const resultsBody = panel.querySelector('.rec-mapper-results-body');
+    const scrollTop = preserveScroll && resultsBody ? resultsBody.scrollTop : 0;
 
     const results = state.extractedResults;
 
@@ -100,6 +104,10 @@
 
     const includedCount = results.filter(r => !r.excluded).length;
 
+    // Get current search area value if panel already exists
+    const existingSearchArea = panel.querySelector('#rec-mapper-search-area');
+    const searchAreaValue = existingSearchArea ? existingSearchArea.value : '';
+
     panel.innerHTML = `
       <div class="rec-mapper-results-header">
         <span>Extracted Locations</span>
@@ -108,11 +116,25 @@
       <div class="rec-mapper-results-body">
         ${itemsHtml || '<div class="rec-mapper-result-item" style="color: #6b7280; text-align: center;">No results</div>'}
       </div>
+      <div class="rec-mapper-search-area">
+        <label for="rec-mapper-search-area">Search Area:</label>
+        <input type="text" id="rec-mapper-search-area" placeholder="e.g., San Francisco, CA" value="${escapeHtml(searchAreaValue)}">
+        <span class="rec-mapper-search-hint">Added to locations for better geocoding</span>
+      </div>
       <div class="rec-mapper-results-footer">
-        <button class="rec-mapper-btn rec-mapper-btn-cancel" id="rec-mapper-refine">Refine Pattern</button>
-        <button class="rec-mapper-btn rec-mapper-btn-done" id="rec-mapper-done">Done - Open Popup</button>
+        <button class="rec-mapper-btn rec-mapper-btn-cancel" id="rec-mapper-refine">Refine</button>
+        <button class="rec-mapper-btn rec-mapper-btn-cancel" id="rec-mapper-save">Save</button>
+        <button class="rec-mapper-btn rec-mapper-btn-done" id="rec-mapper-map">Map</button>
       </div>
     `;
+
+    // Restore scroll position
+    if (preserveScroll && scrollTop > 0) {
+      const newResultsBody = panel.querySelector('.rec-mapper-results-body');
+      if (newResultsBody) {
+        newResultsBody.scrollTop = scrollTop;
+      }
+    }
 
     // Add event listeners to result items
     panel.querySelectorAll('.rec-mapper-result-item').forEach(item => {
@@ -159,17 +181,28 @@
       // Exclude button
       item.querySelector('.exclude-btn').addEventListener('click', (e) => {
         e.stopPropagation();
-        state.extractedResults[index].excluded = !state.extractedResults[index].excluded;
-        renderResultsPanel();
-        updateHighlights();
+        const wasExcluded = state.extractedResults[index].excluded;
+
+        if (!wasExcluded) {
+          // Excluding: find and exclude similar items
+          excludeWithSimilar(index);
+        } else {
+          // Re-including: just toggle this one item back
+          state.extractedResults[index].excluded = false;
+          renderResultsPanel(null, true);
+          updateHighlights();
+        }
       });
     });
 
     // Refine pattern button
     panel.querySelector('#rec-mapper-refine').addEventListener('click', refinePattern);
 
-    // Done button - stores data and notifies user to open popup
-    panel.querySelector('#rec-mapper-done').addEventListener('click', finishSelection);
+    // Save button - saves for later use
+    panel.querySelector('#rec-mapper-save').addEventListener('click', saveForLater);
+
+    // Map button - stores data and opens map in new tab
+    panel.querySelector('#rec-mapper-map').addEventListener('click', openMapTab);
   }
 
   function updateHighlights() {
@@ -201,6 +234,104 @@
     } catch (e) {
       return null;
     }
+  }
+
+  /**
+   * Exclude an item and automatically exclude similar items based on pattern matching
+   */
+  function excludeWithSimilar(excludedIndex) {
+    const excludedResult = state.extractedResults[excludedIndex];
+    const excludedElement = findElementByIdentifier(excludedResult.element);
+
+    // Mark the clicked item as excluded
+    excludedResult.excluded = true;
+
+    if (!excludedElement) {
+      // Can't find element, just exclude this one item
+      renderResultsPanel(null, true);
+      updateHighlights();
+      return;
+    }
+
+    // Find similar items to auto-exclude
+    const similarityThreshold = 0.75; // High threshold to only exclude very similar items
+    let excludedCount = 1;
+
+    state.extractedResults.forEach((result, index) => {
+      if (index === excludedIndex || result.excluded) return;
+
+      const resultElement = findElementByIdentifier(result.element);
+      if (!resultElement) return;
+
+      // Calculate similarity between the excluded element and this element
+      const similarity = PatternMatcher.calculateSimilarity(excludedElement, resultElement);
+
+      if (similarity >= similarityThreshold) {
+        // Also check text content similarity for better accuracy
+        const textSimilarity = calculateTextSimilarity(excludedResult.address, result.address);
+
+        // Exclude if structurally similar AND text patterns are similar
+        // (e.g., both are short names, both are addresses, etc.)
+        if (textSimilarity >= 0.3 || similarity >= 0.9) {
+          result.excluded = true;
+          excludedCount++;
+        }
+      }
+    });
+
+    // Show feedback if multiple items were excluded
+    if (excludedCount > 1) {
+      showExclusionFeedback(excludedCount);
+    }
+
+    renderResultsPanel(null, true);
+    updateHighlights();
+  }
+
+  /**
+   * Calculate text similarity between two strings (0-1)
+   * Used to help determine if extracted content is of the same "type"
+   */
+  function calculateTextSimilarity(text1, text2) {
+    if (!text1 || !text2) return 0;
+
+    const t1 = text1.toLowerCase().trim();
+    const t2 = text2.toLowerCase().trim();
+
+    // Check length similarity
+    const lenRatio = Math.min(t1.length, t2.length) / Math.max(t1.length, t2.length);
+
+    // Check if both have numbers (likely addresses) or both don't
+    const hasNumbers1 = /\d/.test(t1);
+    const hasNumbers2 = /\d/.test(t2);
+    const numberMatch = hasNumbers1 === hasNumbers2 ? 0.3 : 0;
+
+    // Check word count similarity
+    const words1 = t1.split(/\s+/).length;
+    const words2 = t2.split(/\s+/).length;
+    const wordRatio = Math.min(words1, words2) / Math.max(words1, words2);
+
+    // Check for common patterns (URLs, phone numbers, etc.)
+    const isUrl1 = /^https?:\/\//.test(t1);
+    const isUrl2 = /^https?:\/\//.test(t2);
+    const patternMatch = isUrl1 === isUrl2 ? 0.2 : 0;
+
+    return (lenRatio * 0.3) + numberMatch + (wordRatio * 0.2) + patternMatch;
+  }
+
+  /**
+   * Show brief feedback when multiple items are excluded
+   */
+  function showExclusionFeedback(count) {
+    const feedback = document.createElement('div');
+    feedback.className = 'rec-mapper-feedback';
+    feedback.textContent = `Excluded ${count} similar items`;
+    document.body.appendChild(feedback);
+
+    setTimeout(() => {
+      feedback.classList.add('fade-out');
+      setTimeout(() => feedback.remove(), 300);
+    }, 1500);
   }
 
   function refinePattern() {
@@ -259,31 +390,83 @@
     updateBanner();
   }
 
-  function finishSelection() {
-    // Store data in background script
+  function saveForLater() {
     const includedResults = state.extractedResults.filter(r => !r.excluded);
 
+    if (includedResults.length === 0) {
+      alert('No locations to save. Please include at least one location.');
+      return;
+    }
+
+    // Get search area
+    const searchAreaInput = state.resultsPanel.querySelector('#rec-mapper-search-area');
+    const searchArea = searchAreaInput ? searchAreaInput.value.trim() : '';
+
+    // Prompt for name
+    const name = prompt('Enter a name for this extraction:', document.title.substring(0, 30));
+    if (!name) return;
+
+    // Save to storage
     chrome.runtime.sendMessage({
-      action: 'addressesExtracted',
+      action: 'saveExtraction',
+      name: name,
       addresses: includedResults,
+      searchArea: searchArea,
+      pageUrl: window.location.href,
+      pageTitle: document.title
+    }, (response) => {
+      if (response && response.success) {
+        // Show notification
+        const notification = document.createElement('div');
+        notification.className = 'rec-mapper-notification';
+        notification.innerHTML = `<span>✓ Saved "${name}" with ${includedResults.length} locations</span>`;
+        document.body.appendChild(notification);
+        setTimeout(() => notification.remove(), 3000);
+      }
+    });
+  }
+
+  function openMapTab() {
+    // Get included results
+    const includedResults = state.extractedResults.filter(r => !r.excluded);
+
+    if (includedResults.length === 0) {
+      alert('No locations to map. Please include at least one location.');
+      return;
+    }
+
+    // Get search area
+    const searchAreaInput = state.resultsPanel.querySelector('#rec-mapper-search-area');
+    const searchArea = searchAreaInput ? searchAreaInput.value.trim() : '';
+
+    // Send to background to save and open map tab
+    chrome.runtime.sendMessage({
+      action: 'openMapTab',
+      addresses: includedResults,
+      searchArea: searchArea,
       pageUrl: window.location.href,
       pageTitle: document.title
     });
 
-    // Show notification
+    // Show notification and exit
     const notification = document.createElement('div');
     notification.className = 'rec-mapper-notification';
     notification.innerHTML = `
-      <span>✓ ${includedResults.length} locations saved! Click the extension icon to continue.</span>
+      <span>✓ Opening map with ${includedResults.length} locations...</span>
     `;
     document.body.appendChild(notification);
 
     setTimeout(() => {
       notification.remove();
-    }, 4000);
+    }, 2000);
 
-    // Keep highlights but exit selection mode
-    exitSelectionMode(true);
+    // Exit selection mode
+    exitSelectionMode(false);
+  }
+
+  function finishSelection() {
+    // Legacy function - now just calls openMapTab
+    openMapTab();
   }
 
   // Selection mode handlers
@@ -449,17 +632,18 @@
     const resultIndex = state.extractedResults.findIndex(r => r.element?.path === path);
 
     if (resultIndex >= 0) {
-      state.extractedResults[resultIndex].excluded = !state.extractedResults[resultIndex].excluded;
+      const wasExcluded = state.extractedResults[resultIndex].excluded;
 
-      if (state.extractedResults[resultIndex].excluded) {
-        element.classList.remove('rec-mapper-match');
-        element.classList.add('rec-mapper-excluded');
+      if (!wasExcluded) {
+        // Excluding: find and exclude similar items
+        excludeWithSimilar(resultIndex);
       } else {
+        // Re-including: just toggle this one item back
+        state.extractedResults[resultIndex].excluded = false;
         element.classList.remove('rec-mapper-excluded');
         element.classList.add('rec-mapper-match');
+        renderResultsPanel(null, true);
       }
-
-      renderResultsPanel();
     }
   }
 

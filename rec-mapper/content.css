@@ -252,18 +252,56 @@
   color: #dc2626;
 }
 
-.rec-mapper-results-footer {
+/* Search area input */
+.rec-mapper-search-area {
   padding: 12px;
   border-top: 1px solid #e5e7eb;
+  background: #fefce8;
+}
+
+.rec-mapper-search-area label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.rec-mapper-search-area input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.rec-mapper-search-area input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.rec-mapper-search-hint {
+  display: block;
+  font-size: 10px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.rec-mapper-results-footer {
+  padding: 10px;
+  border-top: 1px solid #e5e7eb;
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
   background: #f9fafb;
 }
 
 .rec-mapper-results-footer .rec-mapper-btn {
   flex: 1;
+  padding: 8px 6px;
+  font-size: 12px;
 }
 
 /* Notification */
@@ -311,4 +349,48 @@
 
 .rec-mapper-results-body::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* Exclusion feedback toast */
+.rec-mapper-feedback {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 2147483647;
+  animation: rec-mapper-fade-in 0.2s ease-out;
+}
+
+.rec-mapper-feedback.fade-out {
+  animation: rec-mapper-fade-out 0.3s ease-out forwards;
+}
+
+@keyframes rec-mapper-fade-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes rec-mapper-fade-out {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
 }

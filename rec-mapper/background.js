@@ -86,6 +86,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .then(results => sendResponse(results))
         .catch(error => sendResponse({ error: error.message }));
       return true;
+
+    case 'openMapTab':
+      // Save map data to storage and open map.html in new tab
+      chrome.storage.local.set({
+        mapData: {
+          addresses: message.addresses,
+          searchArea: message.searchArea,
+          pageUrl: message.pageUrl,
+          pageTitle: message.pageTitle,
+          timestamp: Date.now()
+        }
+      }).then(() => {
+        chrome.tabs.create({
+          url: chrome.runtime.getURL('map.html')
+        });
+      });
+      sendResponse({ success: true });
+      break;
+
+    case 'saveExtraction':
+      // Save extraction for later use
+      chrome.storage.local.get('savedExtractions').then(stored => {
+        const saved = stored.savedExtractions || {};
+        saved[message.name] = {
+          addresses: message.addresses,
+          searchArea: message.searchArea,
+          pageUrl: message.pageUrl,
+          pageTitle: message.pageTitle,
+          savedAt: new Date().toISOString()
+        };
+        return chrome.storage.local.set({ savedExtractions: saved });
+      }).then(() => {
+        sendResponse({ success: true });
+      });
+      return true; // Keep channel open for async response
   }
 });
 

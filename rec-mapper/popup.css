@@ -197,23 +197,43 @@ body {
   margin-bottom: 8px;
 }
 
-.tips ul {
-  list-style: none;
+.tips ul,
+.tips ol {
   font-size: 12px;
   color: #64748b;
+  padding-left: 20px;
 }
 
-.tips li {
+.tips ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.tips ul li {
   padding: 4px 0;
   padding-left: 16px;
   position: relative;
 }
 
-.tips li::before {
+.tips ul li::before {
   content: '•';
   position: absolute;
   left: 0;
   color: #667eea;
+}
+
+.tips ol {
+  list-style: decimal;
+}
+
+.tips ol li {
+  padding: 3px 0;
+  padding-left: 4px;
+}
+
+.tips ol li::marker {
+  color: #667eea;
+  font-weight: 600;
 }
 
 /* Saved section */
