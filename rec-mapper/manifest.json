@@ -12,8 +12,7 @@
   "host_permissions": [
     "https://nominatim.openstreetmap.org/*",
     "https://maps.googleapis.com/*",
-    "https://*.tile.openstreetmap.org/*",
-    "https://unpkg.com/*"
+    "https://*.tile.openstreetmap.org/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -44,8 +43,5 @@
       "resources": ["content.css"],
       "matches": ["<all_urls>"]
     }
-  ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self' https://unpkg.com https://maps.googleapis.com; object-src 'self'"
-  }
+  ]
 }

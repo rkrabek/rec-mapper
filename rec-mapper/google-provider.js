@@ -10,45 +10,42 @@ class GoogleMapProvider extends MapProvider {
   }
 
   /**
-   * Load Google Maps API
-   */
-  async loadGoogleMaps() {
-    if (window.google && window.google.maps) {
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      // Create callback name
-      const callbackName = 'googleMapsCallback_' + Date.now();
-
-      window[callbackName] = () => {
-        delete window[callbackName];
-        resolve();
-      };
-
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${this.apiKey}&callback=${callbackName}`;
-      script.async = true;
-      script.defer = true;
-
-      script.onerror = () => {
-        delete window[callbackName];
-        reject(new Error('Failed to load Google Maps API'));
-      };
-
-      document.head.appendChild(script);
-    });
-  }
-
-  /**
    * Initialize the map
+   * Note: Google Maps cannot be loaded in extension pages due to CSP restrictions.
+   * This provider is only usable in content scripts or web pages.
    */
   async init() {
     if (!this.apiKey) {
       throw new Error('Google Maps API key is required');
     }
 
-    await this.loadGoogleMaps();
+    // Check if we're in an extension page (CSP restrictions apply)
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+      const currentUrl = window.location.href;
+      if (currentUrl.startsWith('chrome-extension://')) {
+        throw new Error('Google Maps display is not available in extension pages. Please use OpenStreetMap instead. (Google Maps geocoding still works.)');
+      }
+    }
+
+    // Try to load Google Maps API dynamically (only works outside extension pages)
+    if (!window.google || !window.google.maps) {
+      await new Promise((resolve, reject) => {
+        const callbackName = 'googleMapsCallback_' + Date.now();
+        window[callbackName] = () => {
+          delete window[callbackName];
+          resolve();
+        };
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${this.apiKey}&callback=${callbackName}`;
+        script.async = true;
+        script.defer = true;
+        script.onerror = () => {
+          delete window[callbackName];
+          reject(new Error('Failed to load Google Maps API'));
+        };
+        document.head.appendChild(script);
+      });
+    }
 
     // Create map centered on US by default
     this.map = new google.maps.Map(this.container, {

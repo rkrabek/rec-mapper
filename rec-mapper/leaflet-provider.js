@@ -5,51 +5,16 @@
 class LeafletMapProvider extends MapProvider {
   constructor(container) {
     super(container);
-    this.leafletLoaded = false;
-  }
-
-  /**
-   * Load Leaflet library from CDN
-   */
-  async loadLeaflet() {
-    if (this.leafletLoaded || window.L) {
-      this.leafletLoaded = true;
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      // Load CSS
-      const css = document.createElement('link');
-      css.rel = 'stylesheet';
-      css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      css.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
-      css.crossOrigin = '';
-      document.head.appendChild(css);
-
-      // Load JS
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
-      script.crossOrigin = '';
-
-      script.onload = () => {
-        this.leafletLoaded = true;
-        resolve();
-      };
-
-      script.onerror = () => {
-        reject(new Error('Failed to load Leaflet library'));
-      };
-
-      document.head.appendChild(script);
-    });
   }
 
   /**
    * Initialize the map
+   * Note: Leaflet must be loaded before calling this (via script tag in HTML)
    */
   async init() {
-    await this.loadLeaflet();
+    if (!window.L) {
+      throw new Error('Leaflet library not loaded. Include leaflet.js before initializing.');
+    }
 
     // Create map centered on US by default
     this.map = L.map(this.container, {

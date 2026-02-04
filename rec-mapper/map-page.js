@@ -9,7 +9,8 @@
   const state = {
     addresses: [],
     searchArea: '',
-    mapProvider: 'osm',
+    geocodeProvider: 'osm', // Provider for geocoding (osm or google)
+    displayProvider: 'osm', // Always OSM for display in extension pages
     apiKey: null,
     geocodedResults: [],
     mapInstance: null,
@@ -55,11 +56,15 @@
     state.addresses = stored.mapData.addresses;
     state.searchArea = stored.mapData.searchArea || '';
     state.apiKey = stored.googleMapsApiKey || null;
-    state.mapProvider = stored.mapProvider || 'osm';
+    state.geocodeProvider = stored.mapProvider || 'osm';
 
-    // Check if Google Maps selected but no API key
-    if (state.mapProvider === 'google' && !state.apiKey) {
-      state.mapProvider = 'osm'; // Fall back to OSM
+    // Google Maps display is not available in extension pages due to CSP
+    // Always use OSM for display, but Google geocoding still works if selected
+    state.displayProvider = 'osm';
+
+    // If Google selected but no API key, fall back to OSM for geocoding too
+    if (state.geocodeProvider === 'google' && !state.apiKey) {
+      state.geocodeProvider = 'osm';
     }
 
     setupEventListeners();
@@ -110,7 +115,7 @@
       elements.loadingText.textContent = `Geocoding: ${item.address.substring(0, 40)}${item.address.length > 40 ? '...' : ''}`;
       elements.loadingProgress.textContent = `${state.currentGeocodingIndex + 1} / ${state.addresses.length}`;
 
-      const result = await Geocoder.geocode(queryAddress, state.mapProvider, state.apiKey);
+      const result = await Geocoder.geocode(queryAddress, state.geocodeProvider, state.apiKey);
 
       if (result.success) {
         // Check if disambiguation is needed
@@ -306,7 +311,7 @@
   async function initializeMap(locations) {
     try {
       state.mapInstance = await MapProviderFactory.create(
-        state.mapProvider,
+        state.displayProvider,
         elements.map,
         { apiKey: state.apiKey }
       );
